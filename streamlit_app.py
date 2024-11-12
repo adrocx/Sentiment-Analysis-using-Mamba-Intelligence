@@ -8,13 +8,25 @@ from transformers import pipeline
 # Set your API key here
 YOUTUBE_API_KEY = "AIzaSyDjGOZQhzqQvZhfMBA9P2nwgr66GBQ2bQ0"  # Replace with your actual API key
 
-# Load models once to optimize memory usage
-try:
-    sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=0)
-    emotion_analyzer = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=0)
-    sarcasm_detector = pipeline("text-classification", model="distilbert-base-uncased", device=0)
-except Exception as e:
-    st.error(f"Error loading models: {e}")
+# Force using CPU since Streamlit Cloud likely doesn't have GPU support
+device = -1  # -1 means using CPU
+
+# Initialize models lazily to avoid memory overload
+sentiment_analyzer = None
+emotion_analyzer = None
+sarcasm_detector = None
+
+@st.cache_resource
+def load_models():
+    """Lazy load the models only when needed"""
+    global sentiment_analyzer, emotion_analyzer, sarcasm_detector
+    try:
+        sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=device)
+        emotion_analyzer = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=device)
+        sarcasm_detector = pipeline("text-classification", model="distilbert-base-uncased", device=device)
+        st.success("Models loaded successfully!")
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
 
 # Function to analyze sentiment
 def analyze_sentiment(text: str):
@@ -116,6 +128,7 @@ st.title("YouTube Comment Sentiment, Emotion, and Sarcasm Analyzer")
 video_url = st.text_input("Please enter the YouTube video link:")
 
 if video_url:
+    load_models()  # Load models when user inputs the video URL
     comments = get_youtube_comments(video_url)
 
     if comments:
@@ -147,23 +160,21 @@ if video_url:
         st.dataframe(df_results)
 
         # Plot pie chart for emotion distribution
+        total_comments = len(comments)
         fig = px.pie(
             names=list(emotion_counts.keys()),
-            values=list(emotion_counts.values()),
-            title=f"Distribution of Emotions in {len(comments)} YouTube Comments",
-            color_discrete_sequence=px.colors.qualitative.Pastel
+            values=[(count / total_comments) * 100 for count in emotion_counts.values()],
+            title=f"Distribution of Emotions in YouTube Comments ({total_comments} comments)",
+            color_discrete_sequence=px.colors.sequential.Plasma
         )
-
-        fig.update_traces(textinfo='percent+label', hovertemplate="%{label}: %{percent:.1%} (%{value} comments)")
-
         st.plotly_chart(fig)
 
-        # Display summary of sentiment analysis
-        sentiment_summary = df_results['Sentiment Analysis'].value_counts().to_dict()
-        st.write("### Sentiment Summary")
-        st.write("The overall sentiment breakdown is as follows:")
-        for sentiment, count in sentiment_summary.items():
-            st.write(f"- **{sentiment}**: {count} comments")
+        # Summary of sentiment and emotion distribution
+        sentiment_summary = f"Total Comments Analyzed: {total_comments}\n"
+        sentiment_summary += "\nEmotion Summary:\n"
+        for emotion, count in emotion_counts.items():
+            sentiment_summary += f"{emotion.capitalize()}: {count} ({(count / total_comments) * 100:.2f}%)\n"
 
+        st.write(sentiment_summary)
     else:
         st.write("No comments found for the video.")

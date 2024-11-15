@@ -8,35 +8,27 @@ from transformers import pipeline
 # Set your API key here
 YOUTUBE_API_KEY = "AIzaSyDjGOZQhzqQvZhfMBA9P2nwgr66GBQ2bQ0"  # Replace with your actual API key
 
-# Force using CPU since Streamlit Cloud likely doesn't have GPU support
-device = -1  # -1 means using CPU
-
-# Lazy load models to prevent reloading every time
-@st.cache_resource
-def load_models():
-    """Lazy load the models only when needed"""
-    try:
-        sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=device)
-        emotion_analyzer = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=device)
-        sarcasm_detector = pipeline("text-classification", model="distilbert-base-uncased", device=device)
-        return sentiment_analyzer, emotion_analyzer, sarcasm_detector
-    except Exception as e:
-        st.error(f"Error loading models: {e}")
-        return None, None, None
+# Load models once to optimize memory usage
+try:
+    sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=0)
+    emotion_analyzer = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=0)
+    sarcasm_detector = pipeline("text-classification", model="distilbert-base-uncased", device=0)
+except Exception as e:
+    st.error(f"Error loading models: {e}")
 
 # Function to analyze sentiment
-def analyze_sentiment(text: str, sentiment_analyzer):
+def analyze_sentiment(text: str):
     sentiment = sentiment_analyzer(text)[0]
     return sentiment['label'], sentiment['score']
 
 # Function to analyze emotions
-def analyze_emotion(text: str, emotion_analyzer):
+def analyze_emotion(text: str):
     candidate_labels = ["joy", "anger", "fear", "sadness", "surprise"]
     result = emotion_analyzer(text, candidate_labels=candidate_labels)
     return result['labels'][0], result['scores'][0]
 
 # Function to detect sarcasm
-def detect_sarcasm(text: str, sarcasm_detector):
+def detect_sarcasm(text: str):
     result = sarcasm_detector(text)
     return result[0]['label']
 
@@ -58,7 +50,7 @@ def split_text(text, max_length=512):
     return chunks
 
 # Function to analyze the dynamic sentiment of the text
-def analyze_dynamic_sentiment(text: str, sentiment_analyzer, emotion_analyzer, sarcasm_detector):
+def analyze_dynamic_sentiment(text: str):
     chunks = split_text(text)
 
     # Process each chunk and combine the results
@@ -67,15 +59,15 @@ def analyze_dynamic_sentiment(text: str, sentiment_analyzer, emotion_analyzer, s
     sarcasm_label = None
 
     for chunk in chunks:
-        sentiment_chunk = analyze_sentiment(chunk, sentiment_analyzer)
+        sentiment_chunk = analyze_sentiment(chunk)
         sentiment_label = sentiment_chunk[0]
         sentiment_score += sentiment_chunk[1]
 
-        emotion_chunk = analyze_emotion(chunk, emotion_analyzer)
+        emotion_chunk = analyze_emotion(chunk)
         emotion_label = emotion_chunk[0]
         emotion_score += emotion_chunk[1]
 
-        sarcasm_chunk = detect_sarcasm(chunk, sarcasm_detector)
+        sarcasm_chunk = detect_sarcasm(chunk)
         sarcasm_label = sarcasm_chunk
 
     # Average the sentiment and emotion scores (if there were multiple chunks)
@@ -124,57 +116,77 @@ st.title("YouTube Comment Sentiment, Emotion, and Sarcasm Analyzer")
 video_url = st.text_input("Please enter the YouTube video link:")
 
 if video_url:
-    sentiment_analyzer, emotion_analyzer, sarcasm_detector = load_models()  # Load models when user inputs the video URL
+    comments = get_youtube_comments(video_url)
 
-    if sentiment_analyzer and emotion_analyzer and sarcasm_detector:
-        comments = get_youtube_comments(video_url)
+    if comments:
+        st.write("Comments extracted from the video:")
 
-        if comments:
-            st.write("Comments extracted from the video:")
+        # Display each comment and its analysis
+        results = []
+        emotion_counts = {"joy": 0, "anger": 0, "fear": 0, "sadness": 0, "surprise": 0}
 
-            # Display each comment and its analysis
-            results = []
-            emotion_counts = {"joy": 0, "anger": 0, "fear": 0, "sadness": 0, "surprise": 0}
+        for comment in comments:
+            sentiment = analyze_dynamic_sentiment(comment)
+            results.append({
+                "Comment": comment,
+                "Sentiment Analysis": sentiment['sentiment'],
+                "Sentiment Score": sentiment['sentiment_score'],
+                "Emotion": sentiment['emotion'],
+                "Emotion Score": sentiment['emotion_score'],
+                "Sarcasm": sentiment['sarcasm']
+            })
 
-            for comment in comments:
-                sentiment = analyze_dynamic_sentiment(comment, sentiment_analyzer, emotion_analyzer, sarcasm_detector)
-                results.append({
-                    "Comment": comment,
-                    "Sentiment Analysis": sentiment['sentiment'],
-                    "Sentiment Score": sentiment['sentiment_score'],
-                    "Emotion": sentiment['emotion'],
-                    "Emotion Score": sentiment['emotion_score'],
-                    "Sarcasm": sentiment['sarcasm']
-                })
+            # Count emotions for the pie chart
+            emotion_counts[sentiment['emotion']] += 1
 
-                # Count emotions for the pie chart
-                emotion_counts[sentiment['emotion']] += 1
+        # Convert to DataFrame for easy viewing
+        df_results = pd.DataFrame(results)
 
-            # Convert to DataFrame for easy viewing
-            df_results = pd.DataFrame(results)
+        # Display the DataFrame in Streamlit
+        st.write("Sentiment and Emotion Analysis of YouTube Comments:")
+        st.dataframe(df_results)
 
-            # Display the DataFrame in Streamlit
-            st.write("Sentiment and Emotion Analysis of YouTube Comments:")
-            st.dataframe(df_results)
+        # Plot pie chart for emotion distribution
+        emotion_color_map = {
+            "joy": "yellow",
+            "anger": "red",
+            "fear": "purple",
+            "sadness": "blue",
+            "surprise": "orange"
+        }
 
-            # Plot pie chart for emotion distribution
-            total_comments = len(comments)
-            fig = px.pie(
-                names=list(emotion_counts.keys()),
-                values=[(count / total_comments) * 100 for count in emotion_counts.values()],
-                title=f"Distribution of Emotions in YouTube Comments ({total_comments} comments)",
-                color_discrete_sequence=px.colors.sequential.Plasma
+        fig = px.pie(
+            names=list(emotion_counts.keys()),
+            values=list(emotion_counts.values()),
+            title=f"Distribution of Emotions in {len(comments)} YouTube Comments",
+            color=list(emotion_counts.keys()),
+            color_discrete_map=emotion_color_map
+        )
+
+        fig.update_traces(
+            textinfo='percent+label',
+            hovertemplate="%{label}: %{percent:.1%} (%{value} comments)"
+        )
+
+        # Update layout to expand legend
+        fig.update_layout(
+            legend=dict(
+                title="Emotions",
+                orientation="h",  # Horizontal layout for the legend
+                yanchor="bottom",
+                y=-0.2,  # Adjust position of the legend
+                xanchor="center",
+                x=0.5
             )
-            st.plotly_chart(fig)
+        )
 
-            # Summary of sentiment and emotion distribution
-            sentiment_summary = f"Total Comments Analyzed: {total_comments}\n"
-            sentiment_summary += "\nEmotion Summary:\n"
-            for emotion, count in emotion_counts.items():
-                sentiment_summary += f"{emotion.capitalize()}: {count} ({(count / total_comments) * 100:.2f}%)\n"
+        st.plotly_chart(fig)
 
-            st.write(sentiment_summary)
-        else:
-            st.write("No comments found for the video.")
+        # Display sentiment summary table
+        st.write("### Sentiment Summary Table")
+        sentiment_summary = df_results['Sentiment Analysis'].value_counts().to_dict()
+        sentiment_summary_df = pd.DataFrame(list(sentiment_summary.items()), columns=["Sentiment", "Count"])
+        st.dataframe(sentiment_summary_df)
+
     else:
-        st.error("Failed to load models. Please try again.")
+        st.write("No comments found for the video.")

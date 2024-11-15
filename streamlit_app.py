@@ -8,6 +8,11 @@ from transformers import pipeline
 # Set your API key here
 YOUTUBE_API_KEY = "AIzaSyDjGOZQhzqQvZhfMBA9P2nwgr66GBQ2bQ0"  # Replace with your actual API key
 
+# Initialize models
+sentiment_analyzer = None
+emotion_analyzer = None
+sarcasm_detector = None
+
 # Load models once to optimize memory usage
 try:
     sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=0)
@@ -18,19 +23,25 @@ except Exception as e:
 
 # Function to analyze sentiment
 def analyze_sentiment(text: str):
-    sentiment = sentiment_analyzer(text)[0]
-    return sentiment['label'], sentiment['score']
+    if sentiment_analyzer:
+        sentiment = sentiment_analyzer(text)[0]
+        return sentiment['label'], sentiment['score']
+    return "Error", 0
 
 # Function to analyze emotions
 def analyze_emotion(text: str):
-    candidate_labels = ["joy", "anger", "fear", "sadness", "surprise"]
-    result = emotion_analyzer(text, candidate_labels=candidate_labels)
-    return result['labels'][0], result['scores'][0]
+    if emotion_analyzer:
+        candidate_labels = ["joy", "anger", "fear", "sadness", "surprise"]
+        result = emotion_analyzer(text, candidate_labels=candidate_labels)
+        return result['labels'][0], result['scores'][0]
+    return "Error", 0
 
 # Function to detect sarcasm
 def detect_sarcasm(text: str):
-    result = sarcasm_detector(text)
-    return result[0]['label']
+    if sarcasm_detector:
+        result = sarcasm_detector(text)
+        return result[0]['label']
+    return "Error"
 
 # Function to split long comments into smaller chunks
 def split_text(text, max_length=512):

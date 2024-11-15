@@ -147,23 +147,46 @@ if video_url:
         st.dataframe(df_results)
 
         # Plot pie chart for emotion distribution
+        emotion_color_map = {
+            "joy": "yellow",
+            "anger": "red",
+            "fear": "purple",
+            "sadness": "blue",
+            "surprise": "orange"
+        }
+
         fig = px.pie(
             names=list(emotion_counts.keys()),
             values=list(emotion_counts.values()),
             title=f"Distribution of Emotions in {len(comments)} YouTube Comments",
-            color_discrete_sequence=px.colors.qualitative.Pastel
+            color=list(emotion_counts.keys()),
+            color_discrete_map=emotion_color_map
         )
 
-        fig.update_traces(textinfo='percent+label', hovertemplate="%{label}: %{percent:.1%} (%{value} comments)")
+        fig.update_traces(
+            textinfo='percent+label',
+            hovertemplate="%{label}: %{percent:.1%} (%{value} comments)"
+        )
+
+        # Update layout to expand legend
+        fig.update_layout(
+            legend=dict(
+                title="Emotions",
+                orientation="h",  # Horizontal layout for the legend
+                yanchor="bottom",
+                y=-0.2,  # Adjust position of the legend
+                xanchor="center",
+                x=0.5
+            )
+        )
 
         st.plotly_chart(fig)
 
-        # Display summary of sentiment analysis
+        # Display sentiment summary table
+        st.write("### Sentiment Summary Table")
         sentiment_summary = df_results['Sentiment Analysis'].value_counts().to_dict()
-        st.write("### Sentiment Summary")
-        st.write("The overall sentiment breakdown is as follows:")
-        for sentiment, count in sentiment_summary.items():
-            st.write(f"- **{sentiment}**: {count} comments")
+        sentiment_summary_df = pd.DataFrame(list(sentiment_summary.items()), columns=["Sentiment", "Count"])
+        st.dataframe(sentiment_summary_df)
 
     else:
         st.write("No comments found for the video.")

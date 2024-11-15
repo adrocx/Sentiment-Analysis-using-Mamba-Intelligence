@@ -159,22 +159,46 @@ if video_url:
 
             # Plot pie chart for emotion distribution
             total_comments = len(comments)
-            fig = px.pie(
-                names=list(emotion_counts.keys()),
-                values=[(count / total_comments) * 100 for count in emotion_counts.values()],
-                title=f"Distribution of Emotions in YouTube Comments ({total_comments} comments)",
-                color_discrete_sequence=px.colors.sequential.Plasma
+            emotion_color_map = {
+            "joy": "yellow",
+            "anger": "red",
+            "fear": "purple",
+            "sadness": "blue",
+            "surprise": "orange"
+        }
+
+        fig = px.pie(
+            names=list(emotion_counts.keys()),
+            values=list(emotion_counts.values()),
+            title=f"Distribution of Emotions in {len(comments)} YouTube Comments",
+            color=list(emotion_counts.keys()),
+            color_discrete_map=emotion_color_map
+        )
+
+        fig.update_traces(
+            textinfo='percent+label',
+            hovertemplate="%{label}: %{percent:.1%} (%{value} comments)"
+        )
+
+        # Update layout to expand legend
+        fig.update_layout(
+            legend=dict(
+                title="Emotions",
+                orientation="h",  # Horizontal layout for the legend
+                yanchor="bottom",
+                y=-0.2,  # Adjust position of the legend
+                xanchor="center",
+                x=0.5
             )
-            st.plotly_chart(fig)
+        )
 
-            # Summary of sentiment and emotion distribution
-            sentiment_summary = f"Total Comments Analyzed: {total_comments}\n"
-            sentiment_summary += "\nEmotion Summary:\n"
-            for emotion, count in emotion_counts.items():
-                sentiment_summary += f"{emotion.capitalize()}: {count} ({(count / total_comments) * 100:.2f}%)\n"
+        st.plotly_chart(fig)
 
-            st.write(sentiment_summary)
-        else:
-            st.write("No comments found for the video.")
+        # Display sentiment summary table
+        st.write("### Sentiment Summary Table")
+        sentiment_summary = df_results['Sentiment Analysis'].value_counts().to_dict()
+        sentiment_summary_df = pd.DataFrame(list(sentiment_summary.items()), columns=["Sentiment", "Count"])
+        st.dataframe(sentiment_summary_df)
+
     else:
-        st.error("Failed to load models. Please try again.")
+        st.write("No comments found for the video.")
